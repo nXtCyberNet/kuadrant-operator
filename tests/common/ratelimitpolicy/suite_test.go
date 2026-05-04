@@ -124,13 +124,9 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 var _ = SynchronizedAfterSuite(func() {}, func() {
 	By("tearing down the test environment")
-	if k8sClient != nil {
-		tests.DeleteNamespace(context.Background(), k8sClient, kuadrantInstallationNS)
-	}
-	if testEnv != nil {
-		err := testEnv.Stop()
-		Expect(err).NotTo(HaveOccurred())
-	}
+	tests.DeleteNamespace(context.Background(), k8sClient, kuadrantInstallationNS)
+	err := testEnv.Stop()
+	Expect(err).NotTo(HaveOccurred())
 })
 
 func TestMain(m *testing.M) {

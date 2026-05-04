@@ -31,9 +31,6 @@ const (
 	tokenRateLimitObjectLabelKey = "kuadrant.io/tokenratelimit" //nolint:gosec
 )
 
-type LimitNamespace string
-type ActionScope string
-
 var (
 	StateRateLimitPolicyValid                  = "RateLimitPolicyValid"
 	StateEffectiveRateLimitPolicies            = "EffectiveRateLimitPolicies"
@@ -64,8 +61,8 @@ func GetLimitadorFromTopology(topology *machinery.Topology) *limitadorv1alpha1.L
 	return limitador
 }
 
-func LimitsNamespaceFromRoute(route metav1.Object) LimitNamespace {
-	return LimitNamespace(k8stypes.NamespacedName{Name: route.GetName(), Namespace: route.GetNamespace()}.String())
+func LimitsNamespaceFromRoute(route metav1.Object) string {
+	return k8stypes.NamespacedName{Name: route.GetName(), Namespace: route.GetNamespace()}.String()
 }
 
 func LimitNameToLimitadorIdentifier(rlpKey k8stypes.NamespacedName, uniqueLimitName string) string {
@@ -112,10 +109,10 @@ func rateLimitClusterPatch(host string, port int, mTLS bool) map[string]any {
 //
 // The only action of the rule is the ratelimit service, whose data includes the activation of the limit
 // and any counter qualifier of the limit.
-func wasmActionFromLimit(limit *kuadrantv1.Limit, limitIdentifier string, scope ActionScope, sourcePolicyLocator string, topLevelPredicates kuadrantv1.WhenPredicates) wasm.Action {
+func wasmActionFromLimit(limit *kuadrantv1.Limit, limitIdentifier, scope, sourcePolicyLocator string, topLevelPredicates kuadrantv1.WhenPredicates) wasm.Action {
 	return wasm.Action{
 		ServiceName:          wasm.RateLimitServiceName,
-		Scope:                string(scope),
+		Scope:                scope,
 		SourcePolicyLocators: []string{sourcePolicyLocator}, // Single policy for individual rules
 		ConditionalData: []wasm.ConditionalData{
 			{
@@ -218,7 +215,7 @@ func TokenLimitNameToLimitadorIdentifier(trlpKey k8stypes.NamespacedName, unique
 	return identifier
 }
 
-func wasmActionsFromTokenLimit(tokenLimit *kuadrantv1alpha1.TokenLimit, limitIdentifier string, scope ActionScope, sourcePolicyLocator string, topLevelPredicates kuadrantv1.WhenPredicates) []wasm.Action {
+func wasmActionsFromTokenLimit(tokenLimit *kuadrantv1alpha1.TokenLimit, limitIdentifier, scope, sourcePolicyLocator string, topLevelPredicates kuadrantv1.WhenPredicates) []wasm.Action {
 	predicates := make([]string, 0, len(topLevelPredicates)+1)
 	for _, pred := range topLevelPredicates {
 		predicates = append(predicates, pred.Predicate)
@@ -269,7 +266,7 @@ func wasmActionsFromTokenLimit(tokenLimit *kuadrantv1alpha1.TokenLimit, limitIde
 
 	requestAction := wasm.Action{
 		ServiceName:          wasm.RateLimitCheckServiceName,
-		Scope:                string(scope),
+		Scope:                scope,
 		SourcePolicyLocators: []string{sourcePolicyLocator}, // Single policy for individual token limits
 		ConditionalData: []wasm.ConditionalData{
 			{
@@ -293,7 +290,7 @@ func wasmActionsFromTokenLimit(tokenLimit *kuadrantv1alpha1.TokenLimit, limitIde
 
 	responseAction := wasm.Action{
 		ServiceName:          wasm.RateLimitReportServiceName,
-		Scope:                string(scope),
+		Scope:                scope,
 		SourcePolicyLocators: []string{sourcePolicyLocator}, // Single policy for individual token limits
 		ConditionalData: []wasm.ConditionalData{
 			{
@@ -315,9 +312,9 @@ func buildWasmActionsForRateLimit(effectivePolicy EffectiveRateLimitPolicy, poli
 		func(key k8stypes.NamespacedName, limitName string) string {
 			return LimitNameToLimitadorIdentifier(key, limitName)
 		},
-		func(spec interface{}, limitIdentifier string, scope, sourcePolicyLocator string, predicates kuadrantv1.WhenPredicates) wasm.Action {
+		func(spec interface{}, limitIdentifier, scope, sourcePolicyLocator string, predicates kuadrantv1.WhenPredicates) wasm.Action {
 			limit := spec.(*kuadrantv1.Limit)
-			return wasmActionFromLimit(limit, limitIdentifier, ActionScope(scope), sourcePolicyLocator, predicates)
+			return wasmActionFromLimit(limit, limitIdentifier, scope, sourcePolicyLocator, predicates)
 		},
 	)
 }
@@ -364,7 +361,7 @@ func buildWasmActionsForTokenRateLimit(effectivePolicy EffectiveTokenRateLimitPo
 		sourcePolicyLocator := source.GetLocator()
 
 		// TokenRateLimitPolicy generates multiple actions per limit (request + response phase)
-		tokenActions := wasmActionsFromTokenLimit(limitSpec, limitIdentifier, ActionScope(scope), sourcePolicyLocator, topLevelWhenPredicates)
+		tokenActions := wasmActionsFromTokenLimit(limitSpec, limitIdentifier, scope, sourcePolicyLocator, topLevelWhenPredicates)
 		allActions = append(allActions, tokenActions...)
 	}
 
@@ -414,7 +411,7 @@ func buildWasmActionsForAnyRateLimit(
 		}
 		limitIdentifier := identifierFunc(k8stypes.NamespacedName{Name: source.GetName(), Namespace: source.GetNamespace()}, uniquePolicyRuleKey)
 		limitSpec := policyRule.GetSpec()
-		scope := string(limitsNamespace)
+		scope := limitsNamespace
 		sourcePolicyLocator := source.GetLocator()
 
 		return actionFunc(limitSpec, limitIdentifier, scope, sourcePolicyLocator, topLevelWhenPredicates), true
